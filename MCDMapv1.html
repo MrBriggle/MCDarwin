@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    import { initializeApp } from "firebase/app";
+    import { getAnalytics } from "firebase/analytics";
+
+      const firebaseConfig = {
+        apiKey: "AIzaSyDKJPerye-B0DBkWSExahxu8uOcMi-6b_U",
+        authDomain: "darwin-map-1.firebaseapp.com",
+        projectId: "darwin-map-1",
+        storageBucket: "darwin-map-1.firebasestorage.app",
+        messagingSenderId: "5067070430",
+        appId: "1:5067070430:web:b3c39573a7e310fce9db4f",
+        measurementId: "G-YGMZQ15M2G"
+      };
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const analytics = getAnalytics(app);
+    <title>Interactive Map</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
+    <style>
+        body { text-align: center; font-family: Arial, sans-serif; background-color: #f4f4f4; }
+        #map { height: 500px; width: 80%; margin: 20px auto; border-radius: 10px; box-shadow: 0 4px 8px rgba(0,0,0,0.2); }
+        .toolbar { display: flex; justify-content: center; gap: 10px; margin-bottom: 10px; }
+        .toolbar button, .toolbar select, .toolbar input { padding: 10px; font-size: 14px; border: none; border-radius: 5px; cursor: pointer; }
+        .toolbar button { background-color: #007bff; color: white; }
+        .toolbar button:hover { background-color: #0056b3; }
+        .toolbar .active { background-color: #ffcc00; color: black; }
+    </style>
+</head>
+<body>
+    <h2>Interactive Map</h2>
+    <div class="toolbar">
+        <input type="text" id="location" placeholder="Enter location (e.g., New York, NY)">
+        <button onclick="fetchMap()">Load Map</button>
+        <button id="drawPlotButton" onclick="toggleDrawing()">Draw Plot</button>
+        <button onclick="finishPolygon()">Finish Plot</button>
+    </div>
+    <div id="map"></div>
+    
+    <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+    <script>
+        let map;
+        let drawnPolygons = [];
+        let currentPolygon = [];
+        let tempMarkers = [];
+        let drawingActive = false;
+        
+        function fetchMap() {
+            const location = document.getElementById('location').value;
+            fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${location}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.length > 0) {
+                        const lat = parseFloat(data[0].lat);
+                        const lon = parseFloat(data[0].lon);
+                        map.setView([lat, lon], 13);
+                    } else {
+                        alert('Location not found');
+                    }
+                })
+                .catch(error => console.error('Error fetching map location:', error));
+        }
+
+        fetch('https://ip-api.com/json/')
+            .then(response => response.json())
+            .then(data => {
+                const lat = data.lat || -12.4634;
+                const lon = data.lon || 130.8456;
+                map = L.map('map').setView([lat, lon], 13);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+            })
+            .catch(error => {
+                console.error('Error fetching location:', error);
+                map = L.map('map').setView([-12.4634, 130.8456], 13);
+                L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '&copy; OpenStreetMap contributors'
+                }).addTo(map);
+            });
+        
+        function toggleDrawing() {
+            drawingActive = !drawingActive;
+            document.getElementById('drawPlotButton').classList.toggle('active', drawingActive);
+            if (drawingActive) {
+                map.on('click', addPointToPolygon);
+            } else {
+                map.off('click', addPointToPolygon);
+            }
+        }
+        
+        function addPointToPolygon(event) {
+            const { lat, lng } = event.latlng;
+            currentPolygon.push([lat, lng]);
+            let marker = L.circleMarker([lat, lng], { radius: 5, color: 'black' }).addTo(map);
+            tempMarkers.push(marker);
+        }
+        
+        function finishPolygon() {
+            if (currentPolygon.length > 2) {
+                let polygon = L.polygon(currentPolygon, { color: 'blue' }).addTo(map);
+                polygon.on('click', (e) => showOptionsPopup(e, polygon));
+                drawnPolygons.push(polygon);
+                tempMarkers.forEach(marker => map.removeLayer(marker));
+                tempMarkers = [];
+                currentPolygon = [];
+            }
+        }
+        
+        function showOptionsPopup(event, polygon) {
+            const colors = ['red', 'yellow', 'green', 'blue'];
+            let popupContent = '<div style="text-align: center;">';
+            colors.forEach(color => {
+                popupContent += `<button style="background: ${color}; width: 30px; height: 30px; margin: 5px; border: none; cursor: pointer;" onclick="changePolygonColor('${color}', ${drawnPolygons.indexOf(polygon)})"></button>`;
+            });
+            popupContent += `<br><input type="text" id="plotLabel" placeholder="Enter label" style="margin-top:10px; padding:5px;">`;
+            popupContent += `<br><button style="margin-top:10px; padding:5px; background:green; color:white; border:none; cursor:pointer;" onclick="addLabel(${drawnPolygons.indexOf(polygon)})">Save Label</button>`;
+            popupContent += `<br><button style="margin-top:10px; padding:5px; background:red; color:white; border:none; cursor:pointer;" onclick="deletePolygon(${drawnPolygons.indexOf(polygon)})">Delete</button>`;
+            popupContent += '</div>';
+            let popup = L.popup()
+                .setLatLng(event.latlng)
+                .setContent(popupContent)
+                .openOn(map);
+        }
+        
+        function changePolygonColor(color, index) {
+            if (drawnPolygons[index]) {
+                drawnPolygons[index].setStyle({ color });
+            }
+            map.closePopup();
+        }
+        
+        function addLabel(index) {
+            const label = document.getElementById('plotLabel').value;
+            if (drawnPolygons[index] && label) {
+                drawnPolygons[index].bindTooltip(label, { permanent: true, direction: "center" }).openTooltip();
+            }
+            map.closePopup();
+        }
+        
+        function deletePolygon(index) {
+            if (drawnPolygons[index]) {
+                map.removeLayer(drawnPolygons[index]);
+                drawnPolygons.splice(index, 1);
+            }
+            map.closePopup();
+        }
+    </script>
+</body>
+</html>
